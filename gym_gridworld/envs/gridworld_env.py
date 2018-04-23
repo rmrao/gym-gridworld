@@ -3,18 +3,25 @@ import sys
 import os
 import time
 import copy
+import math
 from gym import error, spaces, utils
 from gym.utils import seeding
 import numpy as np
 from PIL import Image as Image
 import matplotlib.pyplot as plt
 
+from .GridWorld import GridMap
+
 # define colors
-# 0: black; 1 : gray; 2 : blue; 3 : green; 4 : red
-COLORS = {0:[0.0,0.0,0.0], 1:[0.5,0.5,0.5], \
-          2:[0.0,0.0,1.0], 3:[0.0,1.0,0.0], \
-          4:[1.0,0.0,0.0], 6:[1.0,0.0,1.0], \
-          7:[1.0,1.0,0.0]}
+# -1 : gray; 0: black; 1 : gray; 2 : blue; 3 : green; 4 : red
+COLORS = {-1 : np.array([128, 128, 128]), 
+           0 : np.array([1, 1, 1]), 
+           1 : np.array([128, 128, 128]), 
+           2 : np.array([0, 50, 50]), 
+           3 : np.array([0, 255, 255]), 
+           4 : np.array([255, 0, 0]), 
+           6 : np.array([255, 0, 255]), 
+           7 : np.array([255, 255, 0])}
 
 class GridworldEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -26,14 +33,18 @@ class GridworldEnv(gym.Env):
         self.action_pos_dict = {0: [0,0], 1:[-1, 0], 2:[1,0], 3:[0,-1], 4:[0,1]}
  
         ''' set observation space '''
-        self.obs_shape = [128, 128, 3]  # observation space shape
+        self.obs_shape = [20, 20, 3]  # observation space shape
         self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape)
+        
+        ''' set other parameters '''
+        self.restart_once_done = False  # restart or not once done
+        self._verbose = False # to show the environment or not
     
         ''' initialize system state ''' 
         this_file_path = os.path.dirname(os.path.realpath(__file__))
         self.grid_map_path = os.path.join(this_file_path, 'plan1.txt')        
         # self.start_grid_map = self._read_grid_map(self.grid_map_path) # initial grid map
-        self.start_grid_map = self._sample_grid_map(32, 32)
+        self.start_grid_map = self._sample_grid_map()
         self.current_grid_map = copy.deepcopy(self.start_grid_map)  # current grid map
         self.observation = self._gridmap_to_observation(self.start_grid_map)
         self.grid_map_shape = self.start_grid_map.shape
@@ -45,19 +56,59 @@ class GridworldEnv(gym.Env):
                                     self.start_grid_map)
         self.agent_state = copy.deepcopy(self.agent_start_state)
 
-        ''' set other parameters '''
-        self.restart_once_done = False  # restart or not once done
-        self.verbose = False # to show the environment or not
+
+        self._max_episode_steps = 2000
+        self._num_steps = 0
 
         GridworldEnv.num_env += 1
         self.this_fig_num = GridworldEnv.num_env 
-        if self.verbose == True:
+        if self._verbose == True:
             self.fig = plt.figure(self.this_fig_num)
             plt.show(block=False)
             plt.axis('off')
             self._render()
+
+    @property
+    def timelimit(self):
+        return self._max_episode_steps
+
+    @timelimit.setter
+    def timelimit(self, value):
+        self._max_episode_steps = value
+
+    @property
+    def verbose(self):
+        return self._verbose
+
+    @verbose.setter
+    def verbose(self, value):
+        self._verbose = value
+
+    def _sample_grid_map(self, n_rooms=None):
+        if n_rooms is None:
+            # n_rooms = np.random.randint(1, 4)
+            n_rooms = 5
+        elif np.isscalar(n_rooms):
+            n_rooms = np.random.randint(1, n_rooms)
+        elif len(n_rooms == 2):
+            n_rooms = np.random.randint(n_rooms[0], n_rooms[1])
+        else:
+            raise ValueError("n_rooms must be scalar or have length two.")
+
+        self.gridmap = GridMap(n_rooms, max_size=self.obs_shape[:2])
+        # np.save('/home/rmrao/talisker/gridworld/gridmap.npy', self.gridmap.map)
+        return self.gridmap.map
+
+    def load(self, filename):
+        self.gridmap = GridMap.fromfile(filename)
+        mapshape = self.gridmap.map.shape
+        self.obs_shape = list(mapshape) + [3]
+        self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape)
+        
+        self.reset()
+        return self.gridmap.map
     
-    def _sample_grid_map(self, n_row, n_col, epsilon=0.2):
+    def _sample_maze(self, n_row, n_col, epsilon=0.2):
         maze = np.ones((n_row, n_col), dtype=np.int32)
         visited = np.zeros(maze.shape, dtype=np.bool)
         # maze[:,(0, -1)] = 1
@@ -95,46 +146,51 @@ class GridworldEnv(gym.Env):
                 break
 
         return maze
-            
-
 
     def _step(self, action):
         ''' return next observation, reward, finished, success '''
         action = int(action)
+        self._num_steps += 1
         info = {}
         info['success'] = False
         nxt_agent_state = (self.agent_state[0] + self.action_pos_dict[action][0],
                             self.agent_state[1] + self.action_pos_dict[action][1])
+        timed_out = self._num_steps >= self._max_episode_steps
         if action == 0: # stay in place
             info['success'] = True
-            return (self.observation, 0, False, info) 
+            doreward = np.all(nxt_agent_state == self.agent_target_state)
+            return (self.observation, int(doreward), doreward or timed_out, info) 
         if nxt_agent_state[0] < 0 or nxt_agent_state[0] >= self.grid_map_shape[0]:
             info['success'] = False
-            return (self.observation, 0, False, info)
+            return (self.observation, 0, timed_out, info)
         if nxt_agent_state[1] < 0 or nxt_agent_state[1] >= self.grid_map_shape[1]:
             info['success'] = False
-            return (self.observation, 0, False, info)
+            return (self.observation, 0, timed_out, info)
         # successful behavior
         org_color = self.current_grid_map[self.agent_state[0], self.agent_state[1]]
         new_color = self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]]
-        if new_color == 0:
-            if org_color == 4:
-                self.current_grid_map[self.agent_state[0], self.agent_state[1]] = 0
-                self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]] = 4
-            elif org_color == 6 or org_color == 7:
-                self.current_grid_map[self.agent_state[0], self.agent_state[1]] = org_color-4 
-                self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]] = 4
+        if new_color in [0, 2]:
+            self.current_grid_map[self.agent_state] = self.start_grid_map[self.agent_state]
+            if self.current_grid_map[self.agent_state] == 4:
+                self.current_grid_map[self.agent_state] = 0 # agent start state will be 4 in start_grid_map
+            self.current_grid_map[nxt_agent_state] = 4
+            # if org_color == 4:
+            #     self.current_grid_map[self.agent_state[0], self.agent_state[1]] = 0
+            #     self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]] = 4
+            # elif org_color == 6 or org_color == 7:
+            #     self.current_grid_map[self.agent_state[0], self.agent_state[1]] = org_color-4 
+            #     self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]] = 4
             self.agent_state = copy.deepcopy(nxt_agent_state)
         elif new_color == 1: # gray
             info['success'] = False
-            return (self.observation, 0, False, info)
-        elif new_color == 2 or new_color == 3:
+            return (self.observation, 0, timed_out, info)
+        elif new_color == 3:
             self.current_grid_map[self.agent_state[0], self.agent_state[1]] = 0
             self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]] = new_color+4
             self.agent_state = copy.deepcopy(nxt_agent_state)
         self.observation = self._gridmap_to_observation(self.current_grid_map)
         self._render()
-        if nxt_agent_state[0] == self.agent_target_state[0] and nxt_agent_state[1] == self.agent_target_state[1] :
+        if nxt_agent_state[0] == self.agent_target_state[0] and nxt_agent_state[1] == self.agent_target_state[1]:
             target_observation = copy.deepcopy(self.observation)
             if self.restart_once_done:
                 self.observation = self._reset()
@@ -145,12 +201,40 @@ class GridworldEnv(gym.Env):
                 return (target_observation, 1, True, info)
         else:
             info['success'] = True
-            return (self.observation, 0, False, info)
+            return (self.observation, 0, timed_out, info)
 
     def _reset(self):
+        # self.start_grid_map = self._sample_grid_map()
+        self._num_steps = 0
+        self.start_grid_map = self.gridmap.reset()
+        self.current_grid_map = copy.deepcopy(self.start_grid_map)  # current grid map
+        self.observation = self._gridmap_to_observation(self.start_grid_map)
+        self.grid_map_shape = self.start_grid_map.shape
+
+        ''' agent state: start, target, current state '''
+        self.agent_start_state, _ = self._get_agent_start_target_state(
+                                    self.start_grid_map)
+        _, self.agent_target_state = self._get_agent_start_target_state(
+                                    self.start_grid_map)
         self.agent_state = copy.deepcopy(self.agent_start_state)
+
+        self._render()
+        return self.observation
+
+    def sample_new(self):
+        self._num_steps = 0
+        self.start_grid_map = self._sample_grid_map()
         self.current_grid_map = copy.deepcopy(self.start_grid_map)
         self.observation = self._gridmap_to_observation(self.start_grid_map)
+        self.grid_map_shape = self.start_grid_map.shape
+
+        ''' agent state: start, target, current state '''
+        self.agent_start_state, _ = self._get_agent_start_target_state(
+                                    self.start_grid_map)
+        _, self.agent_target_state = self._get_agent_start_target_state(
+                                    self.start_grid_map)
+        self.agent_state = copy.deepcopy(self.agent_start_state)
+
         self._render()
         return self.observation
 
@@ -170,34 +254,44 @@ class GridworldEnv(gym.Env):
         return grid_map_array
 
     def _get_agent_start_target_state(self, start_grid_map):
-        start_state = None
-        target_state = None
-        for i in range(start_grid_map.shape[0]):
-            for j in range(start_grid_map.shape[1]):
-                this_value = start_grid_map[i,j]
-                if this_value == 4:
-                    start_state = [i,j]
-                if this_value == 3:
-                    target_state = [i,j]
-        if start_state is None or target_state is None:
-            sys.exit('Start or target state not specified')
+        start_y, start_x = np.where(start_grid_map == 4)
+        target_y, target_x = np.where(start_grid_map == 3)
+        if len(start_y) != 1:
+            raise ValueError("Start state not specified correctly")
+        if len(target_y) != 1:
+            raise ValueError("Target state not specified correctly")
+        start_state = (start_y[0], start_x[0])
+        target_state = (target_y[0], target_x[0])
+
+        # for i in range(start_grid_map.shape[0]):
+        #     for j in range(start_grid_map.shape[1]):
+        #         this_value = start_grid_map[i,j]
+        #         if this_value == 4:
+        #             start_state = [i,j]
+        #         if this_value == 3:
+        #             target_state = [i,j]
         return start_state, target_state
 
     def _gridmap_to_observation(self, grid_map, obs_shape=None):
         if obs_shape is None:
             obs_shape = self.obs_shape
-        observation = np.random.randn(*obs_shape)*0.0
-        gs0 = int(observation.shape[0]/grid_map.shape[0])
-        gs1 = int(observation.shape[1]/grid_map.shape[1])
-        for i in range(grid_map.shape[0]):
-            for j in range(grid_map.shape[1]):
-                for k in range(3):
-                    this_value = COLORS[grid_map[i,j]][k]
-                    observation[i*gs0:(i+1)*gs0, j*gs1:(j+1)*gs1, k] = this_value
+        observation = np.zeros(list(grid_map.shape) + [3], dtype=np.uint8)
+        for color in COLORS:
+            mask = grid_map == color
+            observation[mask, :] = COLORS[color]
+
+        # Reshape the image:
+        # im = Image.fromarray(observation)
+        # observation = np.array(im.resize(obs_shape[:2]))
+        # gs0 = math.ceil(observation.shape[0] / grid_map.shape[0])
+        # gs1 = math.ceil(observation.shape[1] / grid_map.shape[1])
+        # for i in range(grid_map.shape[0]):
+        #     for j in range(grid_map.shape[1]):
+        #         observation[i * gs0:(i+1)*gs0, j*gs1:(j+1)*gs1] = COLORS[grid_map[i,j]]
         return observation
   
     def _render(self, mode='human', close=False):
-        if self.verbose == False:
+        if self._verbose == False:
             return
         img = self.observation
         fig = plt.figure(self.this_fig_num)

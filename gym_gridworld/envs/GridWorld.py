@@ -246,12 +246,7 @@ class GridMap(object):
             if room.contains_point(y, x):
                 return i
         else:
-            print(y, x)
-            for room in self._rooms:
-                print(room.position)
-            return 0
-            # raise RuntimeError("Cannot find agent room")
-
+            return -1
     @property
     def map(self):
         return self._map

@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from .constants import *
+
 class Room(object):
     # Coordinates are inclusive on top left, exclusive on bottom right
     def __init__(self, global_y, global_x, ysize, xsize):
@@ -10,8 +12,8 @@ class Room(object):
         self.ysize = ysize
 
         self._map = np.zeros((ysize, xsize), dtype=np.int32)
-        self._map[(0,-1), :] = 1
-        self._map[:, (0,-1)] = 1
+        self._map[(0,-1), :] = WALL
+        self._map[:, (0,-1)] = WALL
         self._neighbors = [None]*4
     
     # TODO: There's something weird going on here...
@@ -40,23 +42,23 @@ class Room(object):
         if (self.global_x == other.global_x + other.xsize - 1):
             overlap = [max(self.global_y, other.global_y) + 1, min(self.global_y + self.ysize, other.global_y + other.ysize) - 1]
             door_loc = np.random.randint(overlap[0], overlap[1])
-            self._map[door_loc - self.global_y, 0] = 2
-            other._map[door_loc - other.global_y, -1] = 2
+            self._map[door_loc - self.global_y, 0] = DOOR
+            other._map[door_loc - other.global_y, -1] = DOOR
         elif (other.global_x == self.global_x + self.xsize - 1):
             overlap = [max(self.global_y, other.global_y) + 1, min(self.global_y + self.ysize, other.global_y + other.ysize) - 1]
             door_loc = np.random.randint(overlap[0], overlap[1])
-            self._map[door_loc - self.global_y, -1] = 2
-            other._map[door_loc - other.global_y, 0] = 2
+            self._map[door_loc - self.global_y, -1] = DOOR
+            other._map[door_loc - other.global_y, 0] = DOOR
         elif (self.global_y == other.global_y + other.ysize - 1):
             overlap = [max(self.global_x, other.global_x) + 1, min(self.global_x + self.xsize, other.global_x + other.xsize) - 1]
             door_loc = np.random.randint(overlap[0], overlap[1])
-            self._map[0, door_loc - self.global_x] = 2
-            other._map[-1, door_loc - other.global_x] = 2
+            self._map[0, door_loc - self.global_x] = DOOR
+            other._map[-1, door_loc - other.global_x] = DOOR
         elif (other.global_y == self.global_y + self.ysize - 1):
             overlap = [max(self.global_x, other.global_x) + 1, min(self.global_x + self.xsize, other.global_x + other.xsize) - 1]
             door_loc = np.random.randint(overlap[0], overlap[1])
-            self._map[-1, door_loc - self.global_x] = 2
-            other._map[0, door_loc - other.global_x] = 2
+            self._map[-1, door_loc - self.global_x] = DOOR
+            other._map[0, door_loc - other.global_x] = DOOR
         else:
             raise ValueError("Input room is not a neighbor.")
 
@@ -65,7 +67,7 @@ class Room(object):
         plt.imshow(1 - self._map, cmap='gray')
         plt.show(block=False)
 
-    def contains_point(self, x, y):
+    def contains_point(self, y, x):
         return (self.global_y < y < self.global_y + self.ysize - 1) and (self.global_x < x < self.global_x + self.xsize - 1)
 
     @property
@@ -107,7 +109,7 @@ class GridMap(object):
         for room in self._rooms:
             self._map[room.doors] = 2
 
-        new_map = np.zeros(self.max_size, dtype=np.int32) - 1
+        new_map = np.zeros(self.max_size, dtype=np.int32) + NULL
         new_map[:self._map.shape[0], :self._map.shape[1]] = self._map
         self._map = new_map
 
@@ -212,35 +214,43 @@ class GridMap(object):
         loc = np.random.randint(len(y))
         y = y[loc]
         x = x[loc]
-        self._map[y, x] = 4
+        self._map[y, x] = AGENT
 
         y, x = np.where(self._map == 0)
         loc = np.random.randint(len(y))
         y = y[loc]
         x = x[loc]
-        self._map[y, x] = 3
+        self._map[y, x] = TARGET
         for i, room in enumerate(self._rooms):
-            if room.contains_point(x, y):
+            if room.contains_point(y, x):
                 self._goal_room = i
                 break
         else:
             raise RuntimeError("Cannot find goal room")
 
     def _remove_agent_and_target(self):
-        self._map[self._map == 4] = 0
-        self._map[self._map == 3] = 0
+        self._map[self._map == AGENT] = 0
+        self._map[self._map == TARGET] = 0
 
     def reset(self):
         self._remove_agent_and_target()
         self._add_agent_and_target()
         return self.map
 
-    def find_agent_room(self, x, y):
+    def find_agent_room(self, y, x):
+        if not np.isscalar(x):
+            x = x[0]
+        if not np.isscalar(y):
+            y = y[0]
         for i, room in enumerate(self._rooms):
-            if room.contains_point(x, y):
+            if room.contains_point(y, x):
                 return i
         else:
-            raise RuntimeError("Cannot find target room")
+            print(y, x)
+            for room in self._rooms:
+                print(room.position)
+            return 0
+            # raise RuntimeError("Cannot find agent room")
 
     @property
     def map(self):

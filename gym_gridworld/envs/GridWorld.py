@@ -65,6 +65,9 @@ class Room(object):
         plt.imshow(1 - self._map, cmap='gray')
         plt.show(block=False)
 
+    def contains_point(self, x, y):
+        return (self.global_y < y < self.global_y + self.ysize - 1) and (self.global_x < x < self.global_x + self.xsize - 1)
+
     @property
     def position(self):
         return (slice(self.global_y, self.global_y + self.ysize), slice(self.global_x, self.global_x + self.xsize))
@@ -216,6 +219,12 @@ class GridMap(object):
         y = y[loc]
         x = x[loc]
         self._map[y, x] = 3
+        for i, room in enumerate(self._rooms):
+            if room.contains_point(x, y):
+                self._goal_room = i
+                break
+        else:
+            raise RuntimeError("Cannot find goal room")
 
     def _remove_agent_and_target(self):
         self._map[self._map == 4] = 0
@@ -225,6 +234,13 @@ class GridMap(object):
         self._remove_agent_and_target()
         self._add_agent_and_target()
         return self.map
+
+    def find_agent_room(self, x, y):
+        for i, room in enumerate(self._rooms):
+            if room.contains_point(x, y):
+                return i
+        else:
+            raise RuntimeError("Cannot find target room")
 
     @property
     def map(self):

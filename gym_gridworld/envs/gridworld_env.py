@@ -25,7 +25,7 @@ class GridworldEnv(gym.Env):
         self.action_pos_dict = {0: [0,0], 1:[-1, 0], 2:[1,0], 3:[0,-1], 4:[0,1]}
  
         ''' set observation space '''
-        self.obs_shape = [20, 20, 3]  # observation space shape
+        self.obs_shape = [24, 24, 3]  # observation space shape
         self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape)
         
         ''' set other parameters '''
@@ -80,7 +80,7 @@ class GridworldEnv(gym.Env):
     def _sample_grid_map(self, n_rooms=None):
         if n_rooms is None:
             # n_rooms = np.random.randint(1, 4)
-            n_rooms = 5
+            n_rooms = 3
         elif np.isscalar(n_rooms):
             n_rooms = np.random.randint(1, n_rooms)
         elif len(n_rooms == 2):
@@ -94,7 +94,7 @@ class GridworldEnv(gym.Env):
 
     def load(self, filename):
         with open(filename, 'rb') as f:
-            self.gridmap = pkl.load(filename)
+            self.gridmap = pkl.load(f)
         mapshape = self.gridmap.map.shape
         self.obs_shape = list(mapshape) + [3]
         self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape)
@@ -104,7 +104,7 @@ class GridworldEnv(gym.Env):
 
     def save(self, filename):
         with open(filename, 'wb') as f:
-            pkl.dump(self.gridmap, filename)
+            pkl.dump(self.gridmap, f)
     
     def _sample_maze(self, n_row, n_col, epsilon=0.2):
         maze = np.ones((n_row, n_col), dtype=np.int32)

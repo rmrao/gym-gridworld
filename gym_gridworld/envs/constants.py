@@ -6,10 +6,12 @@ WALL = 1
 DOOR = 2
 TARGET = 3
 AGENT = 4
+SWITCH = 5
 
 COLORS = {NULL   : np.array([128, 128, 128]), 
-          SPACE  : np.array([1, 1, 1]), 
+          SPACE  : np.array([0, 0, 0]), 
           WALL   : np.array([128, 128, 128]), 
           DOOR   : np.array([0, 50, 50]), 
-          TARGET : np.array([0, 255, 255]), 
-          AGENT  : np.array([255, 0, 0])}
+          TARGET : np.array([0, 255, 0]), 
+          AGENT  : np.array([255, 0, 0]),
+          SWITCH : np.array([200, 200, 0])}

@@ -68,7 +68,7 @@ class Room(object):
         plt.show(block=False)
 
     def contains_point(self, y, x):
-        return (self.global_y < y < self.global_y + self.ysize - 1) and (self.global_x < x < self.global_x + self.xsize - 1)
+        return (self.global_y <= y < self.global_y + self.ysize) and (self.global_x <= x < self.global_x + self.xsize)
 
     @property
     def position(self):
@@ -114,6 +114,7 @@ class GridMap(object):
         self._map = new_map
 
         self._add_agent_and_target()
+        self._add_switches()
 
     @classmethod
     def fromfile(cls, filename):
@@ -210,23 +211,34 @@ class GridMap(object):
         return True
 
     def _add_agent_and_target(self):
-        y, x = np.where(self._map == 0)
+        y, x = np.where(self._map == SPACE)
         loc = np.random.randint(len(y))
         y = y[loc]
         x = x[loc]
-        self._map[y, x] = AGENT
+        self._agent_start = (y, x)
 
-        y, x = np.where(self._map == 0)
+        y, x = np.where(self._map == SPACE)
         loc = np.random.randint(len(y))
         y = y[loc]
         x = x[loc]
         self._map[y, x] = TARGET
+        self._goal_state = (y, x)
         for i, room in enumerate(self._rooms):
             if room.contains_point(y, x):
                 self._goal_room = i
                 break
         else:
             raise RuntimeError("Cannot find goal room")
+
+    def _add_switches(self):
+        self._switches = []
+        for room in self._rooms:
+            y, x = np.where(self._map[room.interior] == SPACE)
+            loc = np.random.randint(len(y))
+            y = y[loc]
+            x = x[loc]
+            self._map[y, x] = SWITCH
+            self._switches.append((y, x))
 
     def _remove_agent_and_target(self):
         self._map[self._map == AGENT] = 0
@@ -250,6 +262,19 @@ class GridMap(object):
     @property
     def map(self):
         return self._map
+
+    @property
+    def agent_start(self):
+        return self._agent_start
+
+    @property
+    def goal_state(self):
+        return self._goal_state
+
+    @property
+    def goal_room(self):
+        return self._goal_room
+
 
     # def create_room(self, neighboring_room=None):
     #     xstart, xend, ystart, yend = (None,)*4

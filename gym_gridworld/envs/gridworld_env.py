@@ -23,7 +23,8 @@ class GridworldEnv(gym.Env):
         self.inv_actions = [0, 2, 1, 4, 3]
         self.action_space = spaces.Discrete(5)
         self.action_pos_dict = {0: [0,0], 1:[-1, 0], 2:[1,0], 3:[0,-1], 4:[0,1]}
- 
+        for act in self.action_pos_dict:
+            self.action_pos_dict[act] = np.array(self.action_pos_dict[act])
         ''' set observation space '''
         self.obs_shape = [24, 24, 3]  # observation space shape
         self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape)
@@ -89,45 +90,6 @@ class GridworldEnv(gym.Env):
         with open(filename, 'wb') as f:
             pkl.dump(self.gridmap, f)
     
-    def _sample_maze(self, n_row, n_col, epsilon=0.2):
-        maze = np.ones((n_row, n_col), dtype=np.int32)
-        visited = np.zeros(maze.shape, dtype=np.bool)
-        # maze[:,(0, -1)] = 1
-        # maze[(0, -1), :] = 1
-        # visited[:,(0, -1)] = True
-        # visited[(0, -1), :] = True
-        def get_neighbors(loc):
-            neighbors = np.tile(loc, (4, 1)) + np.array([[1, 0], [-1, 0], [0, 1], [0, -1]])
-            neighbors = neighbors[np.all(neighbors >= 0, 1) & (neighbors[:,0] < n_row) & (neighbors[:,1] < n_col)]
-            return neighbors
-        
-        start = np.array([np.random.randint(n_row), np.random.randint(n_col)])
-        locs = [start]
-        while locs:
-            loc = locs.pop(np.random.randint(len(locs)))
-            neighbors = get_neighbors(loc)
-            if neighbors.shape[0] < 4:
-                visited[loc[0], loc[1]] = True
-            elif np.count_nonzero(visited[neighbors[:,0], neighbors[:,1]]) < 2 or np.random.random() < epsilon:
-                maze[loc[0], loc[1]] = 0
-                visited[loc[0], loc[1]] = True
-                for neighbor in neighbors:
-                    if not visited[neighbor[0], neighbor[1]]:
-                        locs.append(neighbor)
-
-        while True:
-            goal = np.array([np.random.randint(n_row), np.random.randint(n_col)])
-            if maze[goal[0], goal[1]] == 0:
-                maze[goal[0], goal[1]] = 3
-                break
-        while True:
-            agent = np.array([np.random.randint(n_row), np.random.randint(n_col)])
-            if maze[agent[0], agent[1]] == 0:
-                maze[agent[0], agent[1]] = 4
-                break
-
-        return maze
-
     def _step(self, action):
         ''' return next observation, reward, finished, success '''
         action = int(action)
@@ -139,18 +101,18 @@ class GridworldEnv(gym.Env):
 
         reward = 0
         done = False
-        new_state = self.current_grid_map[nxt_agent_state]
+        new_state = self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]]
 
-        if new_color in [SPACE]: # moving to empty space or door
+        if new_state in [SPACE]: # moving to empty space or door
             self.agent_state = nxt_agent_state
             info['success'] = True
-        elif new_color in [WALL, DOOR]:
+        elif new_state in [WALL, DOOR]:
             info['success'] = False
-        elif new_color == SWITCH:
+        elif new_state == SWITCH:
             self._press_switch()
             self.agent_state = nxt_agent_state
             info['success'] = True
-        elif new_color == TARGET:
+        elif new_state == TARGET:
             self.agent_state = nxt_agent_state
             info['success'] = True
             reward = 1
@@ -198,7 +160,7 @@ class GridworldEnv(gym.Env):
             observation[mask, :] = COLORS[color]
         if not self._show_target:
             observation[grid_map == TARGET] = SPACE
-        observation[self.agent_state, :] = COLORS[AGENT]
+        observation[self.agent_state[0], self.agent_state[1], :] = COLORS[AGENT]
 
         return observation
   

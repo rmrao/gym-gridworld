@@ -234,6 +234,8 @@ class GridMap(object):
         self._switches = []
         for room in self._rooms:
             y, x = np.where(self._map[room.interior] == SPACE)
+            y += room.global_y + 1
+            x += room.global_x + 1
             loc = np.random.randint(len(y))
             y = y[loc]
             x = x[loc]

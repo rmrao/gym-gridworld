@@ -97,26 +97,37 @@ class GridworldEnv(gym.Env):
         info = {}
         info['success'] = False
         nxt_agent_state = self.agent_state + self.action_pos_dict[action]
+        nxt_block_state = self.block_state
+        if action == 0 and np.sum(np.abs(self.agent_state - self.block_state)) == 1:
+            nxt_agent_state, nxt_block_state = nxt_block_state, nxt_agent_state
         timed_out = self._num_steps >= self._max_episode_steps
 
         reward = 0
         done = False
+        move_block = False
         new_state = self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]]
+        if np.all(nxt_agent_state == self.block_state):
+            nxt_block_state = self.block_state + self.action_pos_dict[action] if action != 0 else self.agent_state
+            new_state = self.current_grid_map[nxt_block_state[0], nxt_block_state[1]]
+            move_block = True
 
         if new_state in [SPACE]: # moving to empty space or door
+            self.block_state = nxt_block_state
             self.agent_state = nxt_agent_state
             info['success'] = True
         elif new_state in [WALL, DOOR]:
             info['success'] = False
         elif new_state == SWITCH:
             self._press_switch()
+            self.block_state = nxt_block_state
             self.agent_state = nxt_agent_state
             info['success'] = True
         elif new_state == TARGET:
+            self.block_state = nxt_block_state
             self.agent_state = nxt_agent_state
             info['success'] = True
-            reward = 1
-            done = True
+            reward = int(move_block)
+            done = move_block
 
         self.observation = self._gridmap_to_observation(self.current_grid_map)
         self._render()
@@ -142,6 +153,7 @@ class GridworldEnv(gym.Env):
 
         ''' agent state: start, target, current state '''
         self.agent_state = copy.deepcopy(self.gridmap.agent_start)
+        self.block_state = copy.deepcopy(self.gridmap.block_start)
         # must come after call to self.agent_state
         self.observation = self._gridmap_to_observation(self.start_grid_map)
         self._render()
@@ -161,6 +173,7 @@ class GridworldEnv(gym.Env):
         if not self._show_target:
             observation[grid_map == TARGET] = SPACE
         observation[self.agent_state[0], self.agent_state[1], :] = COLORS[AGENT]
+        observation[self.block_state[0], self.block_state[1], :] = COLORS[BLOCK]
 
         return observation
   

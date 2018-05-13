@@ -113,8 +113,9 @@ class GridMap(object):
         new_map[:self._map.shape[0], :self._map.shape[1]] = self._map
         self._map = new_map
 
-        self._add_agent_and_target()
         self._add_switches()
+
+        self.reset()
 
     @classmethod
     def fromfile(cls, filename):
@@ -230,6 +231,13 @@ class GridMap(object):
         else:
             raise RuntimeError("Cannot find goal room")
 
+    def _add_block(self):
+        y, x = np.where(self._map == SPACE)
+        loc = np.random.randint(len(y))
+        y = y[loc]
+        x = x[loc]
+        self._block_start = (y, x)
+
     def _add_switches(self):
         self._switches = []
         for room in self._rooms:
@@ -242,13 +250,13 @@ class GridMap(object):
             self._map[y, x] = SWITCH
             self._switches.append((y, x))
 
-    def _remove_agent_and_target(self):
-        self._map[self._map == AGENT] = 0
-        self._map[self._map == TARGET] = 0
+    def _remove_target(self):
+        self._map[self._map == TARGET] = SPACE
 
     def reset(self):
-        self._remove_agent_and_target()
+        self._remove_target()
         self._add_agent_and_target()
+        self._add_block()
         return self.map
 
     def find_agent_room(self, y, x):
@@ -268,6 +276,10 @@ class GridMap(object):
     @property
     def agent_start(self):
         return self._agent_start
+
+    @property
+    def block_start(self):
+        return self._block_start
 
     @property
     def goal_state(self):

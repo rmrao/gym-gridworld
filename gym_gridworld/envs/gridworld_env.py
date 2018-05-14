@@ -97,6 +97,106 @@ class GridworldEnv(gym.Env):
         info = {}
         info['success'] = False
         nxt_agent_state = self.agent_state + self.action_pos_dict[action]
+        timed_out = self._num_steps >= self._max_episode_steps
+
+        reward = 0
+        done = False
+        new_state = self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]]
+
+        if new_state in [SPACE]: # moving to empty space or door
+            self.agent_state = nxt_agent_state
+            info['success'] = True
+        elif new_state in [WALL, DOOR]:
+            info['success'] = False
+        elif new_state == SWITCH:
+            self._press_switch()
+            self.agent_state = nxt_agent_state
+            info['success'] = True
+        elif new_state == TARGET:
+            self.agent_state = nxt_agent_state
+            info['success'] = True
+            reward = 1
+            done = True
+
+        self.observation = self._gridmap_to_observation(self.current_grid_map)
+        self._render()
+        return (self.observation, reward, done or timed_out, info)
+    
+    def _press_switch(self):
+        self._switch_pressed = True
+        self.current_grid_map[self.current_grid_map == DOOR] = SPACE 
+
+    @property
+    def _show_target(self):
+        # y, x = self.agent_state
+        # return self.gridmap._goal_room == self.gridmap.find_agent_room(y, x)
+        return True
+
+    def _reset(self):
+        # self.start_grid_map = self._sample_grid_map()
+        self._num_steps = 0
+        self._switch_pressed = False
+        self.start_grid_map = self.gridmap.reset()
+        self.current_grid_map = copy.deepcopy(self.start_grid_map)  # current grid map
+        self.grid_map_shape = self.start_grid_map.shape
+
+        ''' agent state: start, target, current state '''
+        self.agent_state = copy.deepcopy(self.gridmap.agent_start)
+        # must come after call to self.agent_state
+        self.observation = self._gridmap_to_observation(self.start_grid_map)
+        self._render()
+        return self.observation
+
+    def sample_new(self):
+        self._sample_grid_map()
+        self._reset()
+
+    def _gridmap_to_observation(self, grid_map, obs_shape=None):
+        if obs_shape is None:
+            obs_shape = self.obs_shape
+        observation = np.zeros(list(grid_map.shape) + [3], dtype=np.uint8)
+        for color in COLORS:
+            mask = grid_map == color
+            observation[mask, :] = COLORS[color]
+        if not self._show_target:
+            observation[grid_map == TARGET] = SPACE
+        observation[self.agent_state[0], self.agent_state[1], :] = COLORS[AGENT]
+        return observation
+  
+    def _render(self, mode='human', close=False):
+        if self._verbose == False:
+            return
+        img = self.observation
+        fig = plt.figure(self.this_fig_num)
+        plt.clf()
+        plt.imshow(img)
+        fig.canvas.draw()
+        plt.pause(0.00001)
+        return 
+
+class GridworldEnvV2(GridworldEnv):
+    
+    def _sample_grid_map(self, n_rooms=None):
+        if n_rooms is None:
+            # n_rooms = np.random.randint(1, 4)
+            n_rooms = 3
+        elif np.isscalar(n_rooms):
+            n_rooms = np.random.randint(1, n_rooms)
+        elif len(n_rooms == 2):
+            n_rooms = np.random.randint(n_rooms[0], n_rooms[1])
+        else:
+            raise ValueError("n_rooms must be scalar or have length two.")
+        
+        self.gridmap = GridMap(n_rooms, max_size=self.obs_shape[:2], add_block=True)
+
+
+    def _step(self, action):
+        ''' return next observation, reward, finished, success '''
+        action = int(action)
+        self._num_steps += 1
+        info = {}
+        info['success'] = False
+        nxt_agent_state = self.agent_state + self.action_pos_dict[action]
         nxt_block_state = self.block_state
         if action == 0 and np.sum(np.abs(self.agent_state - self.block_state)) == 1:
             nxt_agent_state, nxt_block_state = nxt_block_state, nxt_agent_state
@@ -133,16 +233,6 @@ class GridworldEnv(gym.Env):
         self._render()
         return (self.observation, reward, done or timed_out, info)
     
-    def _press_switch(self):
-        self._switch_pressed = True
-        self.current_grid_map[self.current_grid_map == DOOR] = SPACE 
-
-    @property
-    def _show_target(self):
-        # y, x = self.agent_state
-        # return self.gridmap._goal_room == self.gridmap.find_agent_room(y, x)
-        return True
-
     def _reset(self):
         # self.start_grid_map = self._sample_grid_map()
         self._num_steps = 0
@@ -153,7 +243,6 @@ class GridworldEnv(gym.Env):
 
         ''' agent state: start, target, current state '''
         self.agent_state = copy.deepcopy(self.gridmap.agent_start)
-        self.block_state = copy.deepcopy(self.gridmap.block_start)
         # must come after call to self.agent_state
         self.observation = self._gridmap_to_observation(self.start_grid_map)
         self._render()
@@ -173,8 +262,6 @@ class GridworldEnv(gym.Env):
         if not self._show_target:
             observation[grid_map == TARGET] = SPACE
         observation[self.agent_state[0], self.agent_state[1], :] = COLORS[AGENT]
-        observation[self.block_state[0], self.block_state[1], :] = COLORS[BLOCK]
-
         return observation
   
     def _render(self, mode='human', close=False):
@@ -187,3 +274,32 @@ class GridworldEnv(gym.Env):
         fig.canvas.draw()
         plt.pause(0.00001)
         return 
+
+class GridworldEnvV2(GridworldEnv):
+
+
+    def _reset(self):
+        # self.start_grid_map = self._sample_grid_map()
+        self._num_steps = 0
+
+    def _reset(self):
+        # self.start_grid_map = self._sample_grid_map()
+        self._num_steps = 0
+        self._switch_pressed = False
+        self.start_grid_map = self.gridmap.reset()
+        self.current_grid_map = copy.deepcopy(self.start_grid_map)  # current grid map
+        self.grid_map_shape = self.start_grid_map.shape
+
+        ''' agent state: start, target, current state '''
+        self.agent_state = copy.deepcopy(self.gridmap.agent_start)
+        self.block_state = copy.deepcopy(self.gridmap.block_start)
+        # must come after call to self.agent_state
+        self.observation = self._gridmap_to_observation(self.start_grid_map)
+        self._render()
+        return self.observation
+
+    def _gridmap_to_observation(self, grid_map, obs_shape=None):
+        observation = super()._gridmap_to_observation(grid_map, obs_shape)
+        observation[self.block_state[0], self.block_state[1], :] = COLORS[BLOCK]
+        return observation
+

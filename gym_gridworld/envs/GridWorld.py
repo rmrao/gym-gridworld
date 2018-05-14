@@ -89,7 +89,7 @@ class Room(object):
 
 class GridMap(object):
 
-    def __init__(self, n_rooms=5, max_size=(128, 128), gridmap=None):
+    def __init__(self, n_rooms=5, max_size=(128, 128), gridmap=None, add_doors=False, add_block=False):
         if gridmap is not None:
             self._map = gridmap
             self.max_size = gridmap.shape
@@ -113,8 +113,9 @@ class GridMap(object):
         new_map[:self._map.shape[0], :self._map.shape[1]] = self._map
         self._map = new_map
 
-        self._add_switches()
-
+        if add_doors:
+            self._add_switches()
+        self._add_block_flag = add_block
         self.reset()
 
     @classmethod
@@ -256,7 +257,8 @@ class GridMap(object):
     def reset(self):
         self._remove_target()
         self._add_agent_and_target()
-        self._add_block()
+        if self._add_block_flag:
+            self._add_block()
         return self.map
 
     def find_agent_room(self, y, x):

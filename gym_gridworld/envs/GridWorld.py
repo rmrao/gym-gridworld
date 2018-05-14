@@ -107,7 +107,7 @@ class GridMap(object):
 
         # get doors
         for room in self._rooms:
-            self._map[room.doors] = 2
+            self._map[room.doors] = DOOR if add_doors else SPACE
 
         new_map = np.zeros(self.max_size, dtype=np.int32) + NULL
         new_map[:self._map.shape[0], :self._map.shape[1]] = self._map
@@ -257,8 +257,10 @@ class GridMap(object):
     def reset(self):
         self._remove_target()
         self._add_agent_and_target()
+        print(self._add_block_flag)
         if self._add_block_flag:
             self._add_block()
+        print(self._block_start)
         return self.map
 
     def find_agent_room(self, y, x):

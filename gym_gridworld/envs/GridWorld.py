@@ -257,10 +257,8 @@ class GridMap(object):
     def reset(self):
         self._remove_target()
         self._add_agent_and_target()
-        print(self._add_block_flag)
         if self._add_block_flag:
             self._add_block()
-        print(self._block_start)
         return self.map
 
     def find_agent_room(self, y, x):

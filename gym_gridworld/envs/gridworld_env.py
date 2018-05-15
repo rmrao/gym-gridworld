@@ -34,6 +34,9 @@ class GridworldEnv(gym.Env):
         self._verbose = False # to show the environment or not 
         self._max_episode_steps = 2000
 
+        self._cost_to_move = -1
+        self._goal_reward = 2
+
         ''' initialize system state ''' 
         self._sample_grid_map()
         self._reset()
@@ -99,7 +102,7 @@ class GridworldEnv(gym.Env):
         nxt_agent_state = self.agent_state + self.action_pos_dict[action]
         timed_out = self._num_steps >= self._max_episode_steps
 
-        reward = 0
+        reward = self._cost_to_move
         done = False
         new_state = self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]]
 
@@ -115,7 +118,7 @@ class GridworldEnv(gym.Env):
         elif new_state == TARGET:
             self.agent_state = nxt_agent_state
             info['success'] = True
-            reward = 1
+            reward += self._goal_reward
             done = True
 
         self.observation = self._gridmap_to_observation(self.current_grid_map)
@@ -176,10 +179,14 @@ class GridworldEnv(gym.Env):
 
 class GridworldEnvV2(GridworldEnv):
 
+    def __init__(self):
+        super().__init__()
+        self._block_move_reward = 0.5
+
     def _sample_grid_map(self, n_rooms=None):
         if n_rooms is None:
             # n_rooms = np.random.randint(1, 4)
-            n_rooms = 3
+            n_rooms = 1
         elif np.isscalar(n_rooms):
             n_rooms = np.random.randint(1, n_rooms)
         elif len(n_rooms == 2):
@@ -201,7 +208,7 @@ class GridworldEnvV2(GridworldEnv):
             nxt_agent_state, nxt_block_state = nxt_block_state, nxt_agent_state
         timed_out = self._num_steps >= self._max_episode_steps
 
-        reward = 0
+        reward = self._cost_to_move
         done = False
         move_block = False
         new_state = self.current_grid_map[nxt_agent_state[0], nxt_agent_state[1]]
@@ -209,6 +216,7 @@ class GridworldEnvV2(GridworldEnv):
             nxt_block_state = self.block_state + self.action_pos_dict[action] if action != 0 else self.agent_state
             new_state = self.current_grid_map[nxt_block_state[0], nxt_block_state[1]]
             move_block = True
+            reward += self._block_move_reward
 
         if new_state in [SPACE]: # moving to empty space or door
             self.block_state = nxt_block_state
@@ -225,16 +233,12 @@ class GridworldEnvV2(GridworldEnv):
             self.block_state = nxt_block_state
             self.agent_state = nxt_agent_state
             info['success'] = True
-            reward = int(move_block)
+            reward += self._goal_reward
             done = move_block
 
         self.observation = self._gridmap_to_observation(self.current_grid_map)
         self._render()
         return (self.observation, reward, done or timed_out, info)
-
-    def _reset(self):
-        # self.start_grid_map = self._sample_grid_map()
-        self._num_steps = 0
 
     def _reset(self):
         # self.start_grid_map = self._sample_grid_map()
@@ -245,8 +249,8 @@ class GridworldEnvV2(GridworldEnv):
         self.grid_map_shape = self.start_grid_map.shape
 
         ''' agent state: start, target, current state '''
-        self.agent_state = copy.deepcopy(self.gridmap.agent_start)
-        self.block_state = copy.deepcopy(self.gridmap.block_start)
+        self.agent_state = np.array(self.gridmap.agent_start)
+        self.block_state = np.array(self.gridmap.block_start)
         # must come after call to self.agent_state
         self.observation = self._gridmap_to_observation(self.start_grid_map)
         self._render()

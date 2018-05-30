@@ -260,9 +260,6 @@ class GridworldEnvV2(GridworldEnv):
 
         self.observation = self._gridmap_to_observation(self.current_grid_map)
         self._render()
-        if (reward > 0 and not done):
-            print(reward, move_block)
-            assert done, 'Reward is greater than zero for some reason...'
         return (self.observation, reward, done or timed_out, info)
 
     def reset(self):

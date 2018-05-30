@@ -17,7 +17,7 @@ from .constants import *
 
 class GridworldEnv(gym.Env):
     metadata = {'render.modes': ['human']}
-    num_env = 0 
+    num_envs = 0 
     def __init__(self):
         self.actions = [0, 1, 2, 3, 4]
         self.inv_actions = [0, 2, 1, 4, 3]
@@ -27,7 +27,7 @@ class GridworldEnv(gym.Env):
             self.action_pos_dict[act] = np.array(self.action_pos_dict[act])
         ''' set observation space '''
         self.obs_shape = [24, 24, 3]  # observation space shape
-        self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape)
+        self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape, dtype=np.float64)
         
         ''' set other parameters '''
         self.restart_once_done = False  # restart or not once done
@@ -39,11 +39,11 @@ class GridworldEnv(gym.Env):
 
         ''' initialize system state ''' 
         self._sample_grid_map()
-        self._reset()
+        self.reset()
 
-
-        GridworldEnv.num_env += 1
-        self.this_fig_num = GridworldEnv.num_env 
+        self._seed = GridworldEnv.num_envs
+        GridworldEnv.num_envs += 1
+        self.this_fig_num = GridworldEnv.num_envs
         if self._verbose == True:
             self.fig = plt.figure(self.this_fig_num)
             plt.show(block=False)
@@ -77,14 +77,14 @@ class GridworldEnv(gym.Env):
         else:
             raise ValueError("n_rooms must be scalar or have length two.")
 
-        self.gridmap = GridMap(n_rooms, max_size=self.obs_shape[:2])
+        self.gridmap = GridMap(n_rooms, max_size=self.obs_shape[:2], add_doors=True)
 
     def load(self, filename):
         with open(filename, 'rb') as f:
             self.gridmap = pkl.load(f)
         mapshape = self.gridmap.map.shape
         self.obs_shape = list(mapshape) + [3]
-        self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape)
+        self.observation_space = spaces.Box(low=0, high=1, shape=self.obs_shape, dtype=np.float64)
         
         self.reset()
         return self.gridmap.map
@@ -93,7 +93,7 @@ class GridworldEnv(gym.Env):
         with open(filename, 'wb') as f:
             pkl.dump(self.gridmap, f)
     
-    def _step(self, action):
+    def step(self, action):
         ''' return next observation, reward, finished, success '''
         action = int(action)
         self._num_steps += 1
@@ -135,7 +135,7 @@ class GridworldEnv(gym.Env):
         # return self.gridmap._goal_room == self.gridmap.find_agent_room(y, x)
         return True
 
-    def _reset(self):
+    def reset(self):
         # self.start_grid_map = self._sample_grid_map()
         self._num_steps = 0
         self._switch_pressed = False
@@ -152,7 +152,7 @@ class GridworldEnv(gym.Env):
 
     def sample_new(self):
         self._sample_grid_map()
-        self._reset()
+        self.reset()
 
     def _gridmap_to_observation(self, grid_map, obs_shape=None):
         if obs_shape is None:
@@ -181,7 +181,10 @@ class GridworldEnvV2(GridworldEnv):
 
     def __init__(self):
         super().__init__()
-        self._block_move_reward = 0.5
+        self._block_move_reward = -self._cost_to_move
+        self._reward_type = 'standard'
+        self._goal_reward = 1
+
 
     def _sample_grid_map(self, n_rooms=None):
         if n_rooms is None:
@@ -196,7 +199,7 @@ class GridworldEnvV2(GridworldEnv):
         
         self.gridmap = GridMap(n_rooms, max_size=self.obs_shape[:2], add_block=True)
 
-    def _step(self, action):
+    def step(self, action):
         ''' return next observation, reward, finished, success '''
         action = int(action)
         self._num_steps += 1
@@ -216,7 +219,15 @@ class GridworldEnvV2(GridworldEnv):
             nxt_block_state = self.block_state + self.action_pos_dict[action] if action != 0 else self.agent_state
             new_state = self.current_grid_map[nxt_block_state[0], nxt_block_state[1]]
             move_block = True
-            reward += self._block_move_reward
+            if self._reward_type == 'intrinsic':
+                reward += 0.5*self._block_move_reward
+                self._block_move_reward /= 1.1
+            if self._reward_type == 'curriculum1':
+                reward += 1
+        
+        if self._reward_type in ['shaped', 'curriculum2']:
+            sq_dist = np.sum(np.square(self.gridmap._goal_state - self.block_state))
+            initial_dist = np.sqrt(sq_dist)
 
         if new_state in [SPACE]: # moving to empty space or door
             self.block_state = nxt_block_state
@@ -233,16 +244,31 @@ class GridworldEnvV2(GridworldEnv):
             self.block_state = nxt_block_state
             self.agent_state = nxt_agent_state
             info['success'] = True
-            reward += self._goal_reward
-            done = move_block
+            if move_block:
+                reward += self._goal_reward
+                done = True
+
+        if self._reward_type == 'shaped':
+            sq_dist = np.sum(np.square(self.gridmap._goal_state - self.block_state))
+            dist = np.sqrt(sq_dist)
+            reward += initial_dist - dist
+        if self._reward_type == 'curriculum2':
+            sq_dist = np.sum(np.square(self.gridmap._goal_state - self.block_state))
+            dist = np.sqrt(sq_dist)
+            if dist < initial_dist:
+                reward += 1
 
         self.observation = self._gridmap_to_observation(self.current_grid_map)
         self._render()
+        if (reward > 0 and not done):
+            print(reward, move_block)
+            assert done, 'Reward is greater than zero for some reason...'
         return (self.observation, reward, done or timed_out, info)
 
-    def _reset(self):
+    def reset(self):
         # self.start_grid_map = self._sample_grid_map()
         self._num_steps = 0
+        self._block_move_reward = -self._cost_to_move
         self._switch_pressed = False
         self.start_grid_map = self.gridmap.reset()
         self.current_grid_map = copy.deepcopy(self.start_grid_map)  # current grid map
@@ -260,4 +286,14 @@ class GridworldEnvV2(GridworldEnv):
         observation = super()._gridmap_to_observation(grid_map, obs_shape)
         observation[self.block_state[0], self.block_state[1], :] = COLORS[BLOCK]
         return observation
+
+    @property
+    def reward_type(self):
+        return self._reward_type
+
+    @reward_type.setter
+    def reward_type(self, val):
+        if val not in ['standard', 'shaped', 'intrinsic', 'curriculum1', 'curriculum2']:
+            raise ValueError("Unknown reward type")
+        self._reward_type = val
 
